@@ -1,0 +1,20 @@
+[
+  {
+    "id": "template1",
+    "name": "Global Electronics Supply",
+    "nodes": ["Shanghai", "Singapore", "Los Angeles", "Chicago"],
+    "routes": [["Shanghai", "Singapore"], ["Singapore", "Los Angeles"], ["Los Angeles", "Chicago"]]
+  },
+  {
+    "id": "template2",
+    "name": "European Auto Parts",
+    "nodes": ["Berlin", "Rotterdam", "London", "Dublin"],
+    "routes": [["Berlin", "Rotterdam"], ["Rotterdam", "London"], ["London", "Dublin"]]
+  },
+  {
+    "id": "template3",
+    "name": "Asia-Pacific Food Chain",
+    "nodes": ["Bangkok", "Jakarta", "Sydney", "Auckland"],
+    "routes": [["Bangkok", "Jakarta"], ["Jakarta", "Sydney"], ["Sydney", "Auckland"]]
+  }
+] 
