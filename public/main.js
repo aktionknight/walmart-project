@@ -2,6 +2,8 @@
 let templates = [];
 let chart = null;
 let map = null;
+let geoJsonLayer = null;
+let geoJsonData = null;
 let routeLayer = null;
 let selectedTemplate = null;
 let currentView = 'home';
@@ -49,19 +51,85 @@ const cityCoords = {
   "Alternate Hub": [20, 80]
 };
 
+// City to country mapping for highlighting
+const cityCountry = {
+  "Shanghai": "China",
+  "Singapore": "Singapore",
+  "Los Angeles": "United States of America",
+  "Chicago": "United States of America",
+  "Berlin": "Germany",
+  "Rotterdam": "Netherlands",
+  "London": "United Kingdom",
+  "Dublin": "Ireland",
+  "Bangkok": "Thailand",
+  "Jakarta": "Indonesia",
+  "Sydney": "Australia",
+  "Auckland": "New Zealand"
+};
+
+// --- Modal & Spinner Utilities ---
+function showModal(html) {
+  document.getElementById('modalBody').innerHTML = html;
+  document.getElementById('modalOverlay').classList.remove('hidden');
+}
+function hideModal() {
+  document.getElementById('modalOverlay').classList.add('hidden');
+}
+function showSpinner() {
+  document.getElementById('spinnerOverlay').classList.remove('hidden');
+}
+function hideSpinner() {
+  document.getElementById('spinnerOverlay').classList.add('hidden');
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('aboutBtn').onclick = () => {
+    showModal(`
+      <h2 class="text-2xl font-bold mb-2 text-blue-700 flex items-center gap-2">
+        <svg xmlns='http://www.w3.org/2000/svg' class='h-6 w-6 text-blue-600' fill='none' viewBox='0 0 24 24' stroke='currentColor'><path stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M13 16h-1v-4h-1m1-4h.01M12 20a8 8 0 100-16 8 8 0 000 16z' /></svg>
+        About This App
+      </h2>
+      <p class="mb-2 text-gray-700">This simulator lets you explore how global supply chains respond to disruptions. Built with Node.js, Express, Chart.js, Leaflet.js, and Tailwind CSS.</p>
+      <ul class="list-disc pl-6 text-gray-600 mb-2">
+        <li>Model real-world scenarios</li>
+        <li>Visualize impact with charts and maps</li>
+        <li>Interactive, step-by-step simulation</li>
+      </ul>
+      <div class="text-right mt-4"><button id="closeAbout" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">Close</button></div>
+    `);
+    setTimeout(() => {
+      document.getElementById('closeAbout').onclick = hideModal;
+    }, 100);
+  };
+  document.getElementById('closeModal').onclick = hideModal;
+  document.getElementById('modalOverlay').onclick = (e) => {
+    if (e.target === document.getElementById('modalOverlay')) hideModal();
+  };
+
+  fetch('/countries.geo.json')
+    .then(response => response.json())
+    .then(data => {
+      geoJsonData = data;
+    });
+});
+
+// --- Animation Helper ---
+function animateStepIn(el) {
+  el.classList.add('opacity-0', 'translate-y-4');
+  setTimeout(() => {
+    el.classList.remove('opacity-0', 'translate-y-4');
+    el.classList.add('transition', 'duration-500', 'ease-out');
+  }, 10);
+}
+
+// Home page
 function renderHome() {
   document.getElementById('app').innerHTML = `
-    <div class="flex flex-col items-center justify-center flex-1 py-16">
-      <h1 class="text-4xl md:text-5xl font-extrabold text-blue-700 mb-4 text-center drop-shadow">Supply Chain Disruption Simulator</h1>
-      <p class="text-lg md:text-xl text-gray-700 mb-8 max-w-2xl text-center">
-        Explore how global supply chains respond to disruptions like port closures, fuel hikes, and natural disasters. Simulate scenarios, adjust severity and duration, and visualize the impact on delivery, cost, and inventory in real time.
-      </p>
-      <button id="startBtn" class="bg-blue-600 hover:bg-blue-700 text-white text-lg px-8 py-3 rounded shadow-lg transition">Start Simulation</button>
-      <div class="mt-10 text-gray-500 text-sm">
-        <span class="inline-block mr-2">Features:</span>
-        <span class="inline-block bg-blue-100 text-blue-700 px-2 py-1 rounded mr-2">Scenario Modeling</span>
-        <span class="inline-block bg-green-100 text-green-700 px-2 py-1 rounded mr-2">Animated Dashboard</span>
-        <span class="inline-block bg-yellow-100 text-yellow-700 px-2 py-1 rounded">Interactive Map</span>
+    <div id="homeView" class="flex flex-col items-center justify-center flex-1 py-16 bg-blue-accent min-h-screen">
+      <div class="text-center">
+        <h1 class="text-5xl md:text-6xl font-bold mb-4">Supply Chain Simulator</h1>
+        <p class="text-lg md:text-xl text-gray-700 mb-8 max-w-3xl mx-auto">An interactive tool to visualize and understand the impact of disruptions on global supply chains. Powered by Walmart.</p>
+        <button id="startBtn" class="btn btn-blue">Start Simulation</button>
       </div>
     </div>
   `;
@@ -70,86 +138,134 @@ function renderHome() {
     simStep = 1;
     renderSimulator();
   };
+  animateStepIn(document.getElementById('homeView'));
 }
 
 function renderSimulator() {
   document.getElementById('app').innerHTML = `
-    <div class="container mx-auto p-4">
-      <div class="flex justify-between items-center mb-4">
-        <h2 class="text-2xl font-bold text-blue-700">Simulator Dashboard</h2>
-        <button id="backHome" class="text-blue-600 hover:underline">&larr; Home</button>
+    <div id="simView" class="container mx-auto p-4 sm:p-6 lg:p-8 transition duration-500">
+      <div class="flex justify-between items-center mb-6">
+        <h2 class="text-3xl font-bold text-[#004c91]">Simulation Dashboard</h2>
+        <button id="backHome" class="text-[#0071ce] hover:underline font-semibold">Back to Home</button>
       </div>
-      <div id="simSteps" class="mb-6 flex gap-2 text-sm">
-        <div class="${simStep===1?'bg-blue-600 text-white':'bg-gray-200 text-gray-700'} px-3 py-1 rounded">1. Scenario</div>
-        <div class="${simStep===2?'bg-blue-600 text-white':'bg-gray-200 text-gray-700'} px-3 py-1 rounded">2. Severity & Duration</div>
-        <div class="${simStep===3?'bg-blue-600 text-white':'bg-gray-200 text-gray-700'} px-3 py-1 rounded">3. Simulate</div>
-        <div class="${simStep===4?'bg-blue-600 text-white':'bg-gray-200 text-gray-700'} px-3 py-1 rounded">4. Dashboard</div>
+      <div id="simSteps" class="mb-8 flex items-center justify-center gap-4 text-sm font-semibold">
+        <div class="flex items-center gap-2 ${simStep >= 1 ? 'text-[#0071ce]' : 'text-gray-400'}">
+          <div class="w-8 h-8 rounded-full flex items-center justify-center ${simStep >= 1 ? 'bg-[#0071ce] text-white' : 'bg-gray-200'}">1</div>
+          <span>Scenario</span>
+        </div>
+        <div class="flex-1 h-1 ${simStep > 1 ? 'bg-[#0071ce]' : 'bg-gray-200'}"></div>
+        <div class="flex items-center gap-2 ${simStep >= 2 ? 'text-[#0071ce]' : 'text-gray-400'}">
+          <div class="w-8 h-8 rounded-full flex items-center justify-center ${simStep >= 2 ? 'bg-[#0071ce] text-white' : 'bg-gray-200'}">2</div>
+          <span>Disruption</span>
+        </div>
+        <div class="flex-1 h-1 ${simStep > 2 ? 'bg-[#0071ce]' : 'bg-gray-200'}"></div>
+        <div class="flex items-center gap-2 ${simStep >= 3 ? 'text-[#0071ce]' : 'text-gray-400'}">
+          <div class="w-8 h-8 rounded-full flex items-center justify-center ${simStep >= 3 ? 'bg-[#0071ce] text-white' : 'bg-gray-200'}">3</div>
+          <span>Simulate</span>
+        </div>
+        <div class="flex-1 h-1 ${simStep > 3 ? 'bg-[#0071ce]' : 'bg-gray-200'}"></div>
+        <div class="flex items-center gap-2 ${simStep >= 4 ? 'text-[#0071ce]' : 'text-gray-400'}">
+          <div class="w-8 h-8 rounded-full flex items-center justify-center ${simStep >= 4 ? 'bg-[#0071ce] text-white' : 'bg-gray-200'}">4</div>
+          <span>Dashboard</span>
+        </div>
       </div>
-      <div id="simStepContent"></div>
+      <div id="simStepContent" class="bg-white p-6 rounded-xl shadow-lg"></div>
     </div>
   `;
   document.getElementById('backHome').onclick = () => {
     currentView = 'home';
     renderHome();
   };
+  animateStepIn(document.getElementById('simView'));
   renderSimStep();
 }
 
 function renderSimStep() {
   const el = document.getElementById('simStepContent');
   if (simStep === 1) {
-    // Scenario selection
     fetch('/api/templates').then(res=>res.json()).then(data=>{
       templates = data;
       el.innerHTML = `
-        <div class="bg-white p-6 rounded shadow max-w-xl mx-auto">
-          <h3 class="text-lg font-semibold mb-4">Select a Supply Chain Scenario</h3>
-          <select id="templateSelect" class="w-full border rounded p-2 mb-4">
-            ${templates.map(t=>`<option value="${t.id}">${t.name}</option>`).join('')}
-          </select>
-          <button id="nextStep1" class="bg-blue-600 text-white px-6 py-2 rounded hover:bg-blue-700">Next</button>
+        <div class="bg-blue-accent p-6 rounded-xl shadow-blue">
+          <h3 class="text-2xl font-bold mb-4">1. Select a Scenario</h3>
+          <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            ${templates.map(t=>`
+              <div class="scenario-card cursor-pointer" data-template-id="${t.id}">
+                <div class="flex items-center gap-4 mb-4">
+                  <div class="w-16 h-16 bg-blue-accent rounded-full flex items-center justify-center">
+                    <svg class="h-8 w-8 text-[#0071ce]" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" /></svg>
+                  </div>
+                  <h4 class="font-bold text-xl">${t.name}</h4>
+                </div>
+                <p class="text-gray-600">${t.nodes.join(' → ')}</p>
+              </div>
+            `).join('')}
+          </div>
         </div>
       `;
-      document.getElementById('nextStep1').onclick = () => {
-        simState.templateId = document.getElementById('templateSelect').value;
-        selectedTemplate = templates.find(t=>t.id===simState.templateId);
-        simStep = 2;
-        renderSimulator();
-      };
+      document.querySelectorAll('.scenario-card').forEach(card => {
+        card.onclick = () => {
+          simState.templateId = card.dataset.templateId;
+          selectedTemplate = templates.find(t=>t.id===simState.templateId);
+          simStep = 2;
+          renderSimulator();
+        };
+      });
     });
   } else if (simStep === 2) {
-    // Severity & duration
     el.innerHTML = `
-      <div class="bg-white p-6 rounded shadow max-w-xl mx-auto">
-        <h3 class="text-lg font-semibold mb-4">Disruption Details</h3>
-        <div class="mb-4">
-          <label class="block text-sm font-medium mb-1">Disruption Type</label>
-          <select id="disruptionType" class="w-full border rounded p-2">
-            ${disruptionTypes.map(t=>`<option>${t}</option>`).join('')}
-          </select>
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 bg-blue-accent p-6 rounded-xl shadow-blue">
+        <div>
+          <h3 class="text-2xl font-bold mb-4">2. Define Disruption</h3>
+          <div class="space-y-4">
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1">Disruption Type</label>
+              <select id="disruptionType" class="w-full border-gray-300 rounded-md shadow-sm p-2">
+                ${disruptionTypes.map(t=>`<option>${t}</option>`).join('')}
+              </select>
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1">Affected Location</label>
+              <select id="affectedLocation" class="w-full border-gray-300 rounded-md shadow-sm p-2">
+                ${selectedTemplate.nodes.map(loc=>`<option>${loc}</option>`).join('')}
+              </select>
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1">Severity</label>
+              <select id="severity" class="w-full border-gray-300 rounded-md shadow-sm p-2">
+                ${severities.map(s=>`<option value="${s.value}">${s.label}</option>`).join('')}
+              </select>
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1">Duration (days)</label>
+              <input id="duration" type="number" min="1" max="60" value="7" class="w-full border-gray-300 rounded-md shadow-sm p-2" />
+            </div>
+          </div>
+          <div class="flex justify-between mt-8">
+            <button id="prevStep2" class="btn btn-yellow">Back</button>
+            <button id="nextStep2" class="btn btn-blue">Next</button>
+          </div>
         </div>
-        <div class="mb-4">
-          <label class="block text-sm font-medium mb-1">Affected Location</label>
-          <select id="affectedLocation" class="w-full border rounded p-2">
-            ${selectedTemplate.nodes.map(loc=>`<option>${loc}</option>`).join('')}
-          </select>
-        </div>
-        <div class="mb-4">
-          <label class="block text-sm font-medium mb-1">Severity</label>
-          <select id="severity" class="w-full border rounded p-2">
-            ${severities.map(s=>`<option value="${s.value}">${s.label}</option>`).join('')}
-          </select>
-        </div>
-        <div class="mb-4">
-          <label class="block text-sm font-medium mb-1">Duration (days)</label>
-          <input id="duration" type="number" min="1" max="60" value="7" class="w-full border rounded p-2" />
-        </div>
-        <div class="flex gap-2">
-          <button id="prevStep2" class="bg-gray-300 text-gray-700 px-6 py-2 rounded hover:bg-gray-400">Back</button>
-          <button id="nextStep2" class="bg-blue-600 text-white px-6 py-2 rounded hover:bg-blue-700">Next</button>
+        <div id="map-container" class="min-h-[400px] h-full bg-blue-accent rounded-lg">
+          <div id="map" class="h-full w-full"></div>
         </div>
       </div>
     `;
+
+    setTimeout(() => {
+        drawMap(selectedTemplate.routes);
+    }, 100);
+
+    function updateMapHighlight() {
+      const affectedLocation = document.getElementById('affectedLocation').value;
+      const severity = document.getElementById('severity').value;
+      const country = cityCountry[affectedLocation];
+      drawMap(selectedTemplate.routes, false, country, severity);
+    }
+
+    document.getElementById('affectedLocation').onchange = updateMapHighlight;
+    document.getElementById('severity').onchange = updateMapHighlight;
+
     document.getElementById('prevStep2').onclick = () => {
       simStep = 1;
       renderSimulator();
@@ -163,19 +279,20 @@ function renderSimStep() {
       renderSimulator();
     };
   } else if (simStep === 3) {
-    // Simulate
     el.innerHTML = `
-      <div class="bg-white p-6 rounded shadow max-w-xl mx-auto flex flex-col items-center">
-        <h3 class="text-lg font-semibold mb-4">Ready to Simulate?</h3>
-        <div class="mb-4 text-gray-700">
-          <div><b>Scenario:</b> ${selectedTemplate.name}</div>
-          <div><b>Disruption:</b> ${simState.disruptionType} at ${simState.affectedLocation}</div>
-          <div><b>Severity:</b> ${simState.severity.charAt(0).toUpperCase()+simState.severity.slice(1)}</div>
-          <div><b>Duration:</b> ${simState.duration} days</div>
+      <div class="text-center bg-blue-accent p-6 rounded-xl shadow-blue">
+        <h3 class="text-2xl font-bold mb-4">3. Confirm Simulation</h3>
+        <div class="bg-yellow-accent p-6 rounded-lg inline-block">
+          <div class="text-left space-y-2">
+            <p><strong>Scenario:</strong> ${selectedTemplate.name}</p>
+            <p><strong>Disruption:</strong> ${simState.disruptionType} at ${simState.affectedLocation}</p>
+            <p><strong>Severity:</strong> ${simState.severity.charAt(0).toUpperCase()+simState.severity.slice(1)}</p>
+            <p><strong>Duration:</strong> ${simState.duration} days</p>
+          </div>
         </div>
-        <div class="flex gap-2">
-          <button id="prevStep3" class="bg-gray-300 text-gray-700 px-6 py-2 rounded hover:bg-gray-400">Back</button>
-          <button id="runSimBtn" class="bg-blue-600 text-white px-6 py-2 rounded hover:bg-blue-700">Simulate</button>
+        <div class="flex justify-center gap-4 mt-8">
+          <button id="prevStep3" class="btn btn-yellow">Back</button>
+          <button id="runSimBtn" class="btn btn-blue">Run Simulation</button>
         </div>
       </div>
     `;
@@ -187,58 +304,62 @@ function renderSimStep() {
       runSimulation();
     };
   } else if (simStep === 4) {
-    // Dashboard
     el.innerHTML = `
-      <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div class="bg-white p-4 rounded shadow">
-          <h3 class="text-lg font-semibold mb-2 flex items-center gap-2">Simulation Results
-            <span class="ml-1 text-gray-400 cursor-pointer" title="Delivery delay, cost increase, and congestion are estimated based on your scenario.">?</span>
-          </h3>
-          <canvas id="resultChart" height="200"></canvas>
+      <div class="bg-blue-accent p-6 rounded-xl shadow-blue">
+        <h3 class="text-2xl font-bold mb-4 text-center">4. Simulation Dashboard</h3>
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+          <div class="bg-white p-6 rounded-lg shadow-md">
+            <h4 class="text-xl font-semibold mb-4">Route Map</h4>
+            <div id="map" class="h-[400px] w-full rounded-lg"></div>
+          </div>
+          <div class="bg-white p-6 rounded-lg shadow-md">
+            <h4 class="text-xl font-semibold mb-4">Simulation Results</h4>
+            <div class="chart-container"><canvas id="resultChart" height="300"></canvas></div>
+          </div>
         </div>
-        <div class="bg-white p-4 rounded shadow">
-          <h3 class="text-lg font-semibold mb-2 flex items-center gap-2">Route Map
-            <span class="ml-1 text-gray-400 cursor-pointer" title="Shows original and new routes after disruption.">?</span>
-          </h3>
-          <div id="map"></div>
+        <div class="bg-white p-6 rounded-lg shadow-md mt-8">
+          <h4 class="text-xl font-semibold mb-4">Inventory Levels</h4>
+          <div class="chart-container"><canvas id="inventoryChart" height="300"></canvas></div>
         </div>
-      </div>
-      <div class="bg-white p-4 rounded shadow mt-6 max-w-2xl mx-auto">
-        <h3 class="text-lg font-semibold mb-2 flex items-center gap-2">Inventory Levels
-          <span class="ml-1 text-gray-400 cursor-pointer" title="Estimated inventory at each node after disruption (0-100 scale).">?</span>
-        </h3>
-        <canvas id="inventoryChart" height="120"></canvas>
-      </div>
-      <div class="flex gap-2 mt-6">
-        <button id="resetBtn" class="bg-gray-400 text-white px-4 py-2 rounded hover:bg-gray-500">Reset</button>
-        <button id="newSimBtn" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">New Simulation</button>
-      </div>
-      <div class="mt-6 text-gray-600 text-sm max-w-2xl mx-auto">
-        <b>Scenario:</b> ${selectedTemplate.name} <br/>
-        <b>Description:</b> ${selectedTemplate.nodes.join(' → ')}
+        <div class="flex justify-center gap-4 mt-8">
+          <button id="resetBtn" class="btn btn-yellow">Reset</button>
+          <button id="newSimBtn" class="btn btn-blue">New Simulation</button>
+        </div>
       </div>
     `;
-    updateChart(null);
-    updateInventoryChart(null);
-    drawMap(selectedTemplate ? selectedTemplate.routes : []);
-    document.getElementById('resetBtn').onclick = () => {
-      updateChart(null);
-      updateInventoryChart(null);
-      drawMap(selectedTemplate.routes);
-    };
-    document.getElementById('newSimBtn').onclick = () => {
-      simStep = 1;
-      renderSimulator();
-    };
-    if (simState.simResult) {
-      updateChart(simState.simResult);
-      updateInventoryChart(simState.simResult);
-      drawMap(simState.simResult.newRoutes, true);
-    }
+
+    let chartsUpdated = false;
+    setTimeout(() => {
+      if (!chartsUpdated) {
+        const data = simState.simResult;
+        if (data && data.deliveryDelayDays !== undefined) {
+          updateChart(data);
+          updateInventoryChart(data);
+          drawMap(data.newRoutes, true);
+        } else {
+          updateChart(null);
+          updateInventoryChart(null);
+          drawMap(selectedTemplate.routes);
+          const chartDiv = document.getElementById('resultChart').parentElement;
+          chartDiv.insertAdjacentHTML('beforeend', '<div class="text-red-600 mt-4">Simulation failed or returned no data.</div>');
+        }
+        chartsUpdated = true;
+      }
+      document.getElementById('resetBtn').onclick = () => {
+        updateChart(null);
+        updateInventoryChart(null);
+        drawMap(selectedTemplate.routes);
+      };
+      document.getElementById('newSimBtn').onclick = () => {
+        simStep = 1;
+        renderSimulator();
+      };
+    }, 100);
   }
 }
 
 function runSimulation() {
+  showSpinner();
   fetch('/api/simulate', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -255,44 +376,34 @@ function runSimulation() {
       simState.simResult = data;
       simStep = 4;
       renderSimulator();
-    });
+    })
+    .finally(hideSpinner);
 }
 
 function updateChart(data) {
   const ctx = document.getElementById('resultChart').getContext('2d');
   if (chart) chart.destroy();
-  if (!data) {
-    chart = new Chart(ctx, {
-      type: 'bar',
-      data: {
-        labels: ['Delivery Delay (days)', 'Cost Increase (%)', 'Warehouse Congestion'],
-        datasets: [{
-          label: 'Simulation',
-          data: [0, 0, 0],
-          backgroundColor: ['#2563eb', '#f59e42', '#ef4444']
-        }]
-      },
-      options: { animation: true }
-    });
-    return;
-  }
   chart = new Chart(ctx, {
     type: 'bar',
     data: {
       labels: ['Delivery Delay (days)', 'Cost Increase (%)', 'Warehouse Congestion'],
       datasets: [{
-        label: 'Simulation',
-        data: [data.deliveryDelayDays, data.costIncreasePercent, data.warehouseCongestionLevel],
-        backgroundColor: ['#2563eb', '#f59e42', '#ef4444']
+        label: 'Simulation Impact',
+        data: data ? [data.deliveryDelayDays, data.costIncreasePercent, data.warehouseCongestionLevel] : [0, 0, 0],
+        backgroundColor: ['#0071ce', '#ffc220', '#f44336'],
+        borderRadius: 4,
       }]
     },
     options: {
-      animation: {
-        duration: 800,
-        easing: 'easeOutBounce'
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        title: { display: true, text: 'Simulation Impact Assessment', font: { size: 16, weight: 'bold' }, color: '#004c91' }
       },
       scales: {
-        y: { beginAtZero: true, max: 100 }
+        y: { beginAtZero: true, max: 100, grid: { color: 'rgba(0,0,0,0.05)' } },
+        x: { grid: { display: false } }
       }
     }
   });
@@ -301,63 +412,96 @@ function updateChart(data) {
 function updateInventoryChart(data) {
   const ctx = document.getElementById('inventoryChart').getContext('2d');
   if (inventoryChart) inventoryChart.destroy();
-  if (!data || !data.inventoryLevels) {
-    inventoryChart = new Chart(ctx, {
-      type: 'bar',
-      data: {
-        labels: selectedTemplate ? selectedTemplate.nodes : [],
-        datasets: [{
-          label: 'Inventory Level',
-          data: selectedTemplate ? selectedTemplate.nodes.map(_=>0) : [],
-          backgroundColor: '#10b981'
-        }]
-      },
-      options: {
-        indexAxis: 'y',
-        animation: true,
-        scales: { x: { min: 0, max: 100 } }
-      }
-    });
-    return;
-  }
   inventoryChart = new Chart(ctx, {
-    type: 'bar',
+    type: 'line',
     data: {
-      labels: selectedTemplate.nodes,
+      labels: selectedTemplate ? selectedTemplate.nodes : [],
       datasets: [{
         label: 'Inventory Level',
-        data: data.inventoryLevels,
-        backgroundColor: '#10b981'
+        data: data && data.inventoryLevels ? data.inventoryLevels : (selectedTemplate ? selectedTemplate.nodes.map(_ => 0) : []),
+        backgroundColor: 'rgba(0, 113, 206, 0.1)',
+        borderColor: '#0071ce',
+        borderWidth: 3,
+        fill: true,
+        pointBackgroundColor: '#ffc220',
+        pointRadius: 5,
+        pointHoverRadius: 7
       }]
     },
     options: {
-      indexAxis: 'y',
-      animation: {
-        duration: 900,
-        easing: 'easeOutBounce'
-      },
-      scales: { x: { min: 0, max: 100 } },
+      responsive: true,
+      maintainAspectRatio: false,
       plugins: {
-        tooltip: {
-          callbacks: {
-            label: ctx => ` ${ctx.parsed.x} / 100`
-          }
-        }
+        legend: { display: false },
+        title: { display: true, text: 'Inventory Levels Across Nodes', font: { size: 16, weight: 'bold' }, color: '#004c91' }
+      },
+      scales: {
+        y: { beginAtZero: true, max: 100, grid: { color: 'rgba(0,0,0,0.05)' } },
+        x: { grid: { display: false } }
       }
     }
   });
 }
 
-function drawMap(routes, animate) {
+function drawMap(routes, animate, affectedCountry, severity) {
   if (!map) {
     map = L.map('map').setView([20, 0], 2);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '© OpenStreetMap contributors'
     }).addTo(map);
+  } else {
+    if (geoJsonLayer) {
+      map.removeLayer(geoJsonLayer);
+    }
+    if (routeLayer) {
+      map.removeLayer(routeLayer);
+    }
   }
-  if (routeLayer) {
-    map.removeLayer(routeLayer);
+
+  if (geoJsonData) {
+    geoJsonLayer = L.geoJSON(geoJsonData, {
+      style: function(feature) {
+        let fillColor = '#f0f8ff'; // A very light blue
+        let fillOpacity = 0.5;
+        if (feature.properties.name === affectedCountry) {
+          switch (severity) {
+            case 'low':
+              fillColor = '#79b829'; // Walmart Green
+              break;
+            case 'medium':
+              fillColor = '#ffc220'; // Walmart Yellow
+              break;
+            case 'high':
+              fillColor = '#ff4c4c'; // A shade of red
+              break;
+          }
+          fillOpacity = 0.7;
+        }
+        return {
+          fillColor: fillColor,
+          weight: 1,
+          opacity: 1,
+          color: '#004c91', // Walmart Dark Blue
+          fillOpacity: fillOpacity
+        };
+      },
+      onEachFeature: function (feature, layer) {
+        layer.on('click', function () {
+          const countryName = feature.properties.name;
+          const affectedLocationSelect = document.getElementById('affectedLocation');
+          for (let i = 0; i < affectedLocationSelect.options.length; i++) {
+            const option = affectedLocationSelect.options[i];
+            if (cityCountry[option.value] === countryName) {
+              affectedLocationSelect.value = option.value;
+              updateMapHighlight();
+              break;
+            }
+          }
+        });
+      }
+    }).addTo(map);
   }
+
   routeLayer = L.layerGroup();
   if (routes && routes.length) {
     routes.forEach((route, i) => {
@@ -367,7 +511,7 @@ function drawMap(routes, animate) {
           cityCoords[from],
           cityCoords[to]
         ], {
-          color: i === routes.length - 1 && animate ? '#f59e42' : '#2563eb',
+          color: i === routes.length - 1 && animate ? '#ffc220' : '#0071ce',
           weight: 5,
           opacity: animate && i === routes.length - 1 ? 0.7 : 0.5,
           dashArray: animate && i === routes.length - 1 ? '10,10' : null
@@ -385,6 +529,8 @@ function drawMap(routes, animate) {
     });
   }
   routeLayer.addTo(map);
+
+  setTimeout(() => map.invalidateSize(), 10);
 }
 
 window.onload = function() {
