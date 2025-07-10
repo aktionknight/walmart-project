@@ -1,0 +1,8 @@
+from,to,capacity,transport_cost
+Iran,India,250,3.5
+Iran,China,200,4.0
+Saudi Arabia,India,300,5.0
+Russia,India,150,5.5
+Iran,UAE,180,2.5
+USA,India,100,12.0
+USA,Europe,200,6.8
