@@ -3,6 +3,8 @@ const path = require('path');
 const fs = require('fs');
 const app = express();
 const PORT = 3000;
+const { PythonShell } = require('python-shell');
+const { exec } = require('child_process');
 
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
@@ -84,16 +86,33 @@ app.get('/api/templates', (req, res) => {
 
 // POST /api/simulate
 app.post('/api/simulate', (req, res) => {
-  const { templateId, disruptionType, affectedLocation, severity, duration } = req.body;
-  const template = templates.find(t => t.id === templateId);
+  const disruptionType = req.body.disruptionType;
+  const severity = req.body.severity;
+  const duration = req.body.duration;
 
-  if (!template) {
-    return res.status(404).json({ error: 'Template not found' });
-  }
-
-  const simulationResult = runAdvancedSimulation(template, disruptionType, affectedLocation, severity, duration);
-
-  res.json(simulationResult);
+  const cmd = `python simulation.py "${disruptionType}" "${severity}" "${duration}"`;
+  console.log('Running:', cmd);
+  exec(cmd, { cwd: __dirname }, (err, stdout, stderr) => {
+    console.log('stdout:', stdout);
+    console.log('stderr:', stderr);
+    if (err) {
+      console.error('Python error:', err);
+      return res.status(500).json({ error: 'Python simulation failed' });
+    }
+    try {
+      const output = JSON.parse(stdout.trim());
+      res.json({
+        deliveryDelayDays: output.deliveryDelayDays,
+        costIncreasePercent: output.costIncreasePercent,
+        warehouseCongestionLevel: output.warehouseCongestionLevel,
+        newRoutes: output.routes.map(r => [r.from, r.to]),
+        inventoryLevels: output.cost_over_time
+      });
+    } catch (e) {
+      console.error('JSON parse error:', e, 'stdout:', stdout);
+      res.status(500).json({ error: 'Failed to parse Python output' });
+    }
+  });
 });
 
 app.listen(PORT, () => {
